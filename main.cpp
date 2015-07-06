@@ -350,6 +350,11 @@ main(int argc, char *argv[])
       }
    }
 
+   // Output channel map
+   for (auto &channel: tsdemux.GetChannelMap()) {
+      std::cout << channel.first << " @ PID "<< channel.second.mPMTPID << std::endl;
+   }
+
 #endif
 
 #if 0

@@ -18,6 +18,10 @@
 namespace MP2TS {
 
 const uint32_t PAT_PID = 0;
+const uint32_t CAT_PID = 1;
+const uint32_t TSDT_PID = 2;
+const uint32_t IPMP_PID = 3;
+
 
 // Errors
 enum ErrorCode {
@@ -37,6 +41,10 @@ public:
 
 class Channel {
 public:
+   Channel() : mPMTPID(0) {}
+   Channel(uint32_t pmtpid) : mPMTPID(pmtpid) {}
+
+   uint32_t            mPMTPID;
    std::list<uint32_t> mVideoPID;
    std::list<uint32_t> mAudioPID;
 };
@@ -178,12 +186,108 @@ public:
    bool Parse(PES_Packet &packet) {
       bool rval = true;
 
+      // Decode Program Association Table
       if (mPID == PAT_PID) {
          if (mVerbose) {
             std::cout << "Parsing PAT" << std::endl;
-
          }
+         ParsePAT(packet);
       }
+      // TODO: Conditional Access Table
+      else if (mPID == CAT_PID) {
+
+      }
+      // TODO: Transport Stream Description Table
+      else if (mPID == TSDT_PID) {
+
+      }
+      // TODO: IPMP Control Information Table
+      else if (mPID == IPMP_PID) {
+
+      }
+      // Reserved - this should not happen
+      else if ((mPID >= 0x4) && (mPID <= 0xf)) {
+
+      }
+      // DVB Metadata
+      else if ((mPID >= 0x10) && (mPID <= 0x1f)) {
+
+      }
+      // Assigned by PMT
+      else if (((mPID >= 0x20) && (mPID <= 0x1ffa))) {
+         if (mVerbose) {
+            std::cout << "Parsing Assigned PID" << std::endl;
+         }
+         ParseAssigned(packet);
+      }
+      // TODO: Used by DigiCypher 2/ATSC MGT  Metadata
+      else if (mPID == 0x1ffb) {
+
+      }
+      // Assigned by PMT
+      else if (((mPID >= 0x1ffc) && (mPID <= 0x1ffe))) {
+         if (mVerbose) {
+            std::cout << "Parsing Assigned PID" << std::endl;
+         }
+         ParseAssigned(packet);
+      }
+      // TODO: Null Packet
+      else if (mPID == 0x1fff) {
+
+      }
+      return rval;
+   }
+
+   bool ParsePAT(PES_Packet &packet) {
+      bool rval = true;
+
+      // Parser the PSI Header
+      ParsePSIHeader(packet);
+
+      // After the PSI Header the pointer needs to advance by
+      // mFillerLength + 8
+      uint8_t *data = packet.mData + mFillerLength + 8;
+
+      // Start decoding PAT
+      // bytes left excluding the CRC is
+      // Section Length - (5) Syntax - (4) CRC
+      // Section Length = CRC Length + 1
+      // Bytes Left = CRC Length - 8
+      uint32_t bytes_left = mCRCLength - 8;
+
+      // Number of PAT Specific Data is bytes_left / 4
+      uint32_t PAT_entries = bytes_left >> 2;
+
+      //
+      if (mVerbose == true) {
+         std::cout << " " << PAT_entries << " PAT entries" << std::endl;
+      }
+      for (uint32_t i=0;i<PAT_entries;i++) {
+         unsigned int program_number = 0;
+         program_number |= *data << 8;
+         data++;
+         program_number |= *data;
+         data++;
+         if (mVerbose == true) {
+            std::cout << "   Program Number = " << program_number << std::endl;
+         }
+         unsigned int pmt_pid = 0;
+         pmt_pid |= *data << 8;
+         data++;
+         pmt_pid |= *data;
+         data++;
+         if (mVerbose == true) {
+            std::cout << "   PMT_PID= " << (pmt_pid & 0x1fff) << std::endl;
+         }
+         mChannelMap.insert( std::map< uint32_t, Channel >::value_type ( program_number, Channel(pmt_pid & 0x1fff) ) );
+         //mChannelMap[program_number] = Channel(pmt_pid);
+      }
+
+      return rval;
+   }
+
+   bool ParseAssigned(PES_Packet &packet) {
+      bool rval = true;
 
       return rval;
    }
@@ -202,6 +306,10 @@ public:
 
    ErrorCode Error() {
       return mError;
+   }
+
+   std::map<uint32_t, Channel> &GetChannelMap() {
+      return mChannelMap;
    }
 
 private:
@@ -246,22 +354,29 @@ private:
    uint8_t  *mCRCPointer;
    uint32_t mCRCLength;
 
+   uint32_t mFillerLength;
+
+   uint32_t mTableId;
+   uint32_t mTableIdExtenxion;
+
+   uint32_t mSectionNumber;
+   uint32_t mLastSectionNumber;
+
    // Returns the number of bytes parsed
    uint32_t ParsePSIHeader(PES_Packet &packet) {
-      uint32_t rval = 0;
-
       uint8_t *data = packet.mData;
 
       // Skip filler
       unsigned int pointer_field = *data++;
       data += pointer_field;
+      mFillerLength = 1+pointer_field;
 
       // Set the start of the payload to include in the CRC calculation
       mCRCPointer = data;
 
       // Parse Header
       // Table ID
-      unsigned int table_id = *data++;
+      mTableId = *data++;
       //std::cout << "Table ID = " << table_id << std::endl;
 
       // Section Length
@@ -287,23 +402,24 @@ private:
       //std::cout << std::dec;
 
       // Table ID Extension
-      unsigned int table_id_extension = 0;
-      table_id_extension |= *data << 8;
+      mTableIdExtenxion = 0;
+      mTableIdExtenxion |= *data << 8;
       data++;
-      table_id_extension |= *data;
+      mTableIdExtenxion |= *data;
       data++;
       //std::cout << "Table ID Extension = " << table_id_extension << std::endl;
 
       // Skip (Reserved bits (0b11), Version Number, Current/Next indicator)
       data++;
 
-      unsigned int section_number = *data++;
+      mSectionNumber = *data++;
       //std::cout << "Section Number = " << section_number << std::endl;
 
-      unsigned int last_section_number = *data++;
+      mLastSectionNumber = *data++;
       //std::cout << "Last Section Number = " << last_section_number << std::endl;
 
-      return rval;
+      uint32_t bytes_read = (data-packet.mData);
+      return bytes_read;
    }
 };
 
