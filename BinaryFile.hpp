@@ -8,13 +8,16 @@
 #ifndef BINARYFILE_HPP_
 #define BINARYFILE_HPP_
 
+#include <fstream>
 #include <string>
 
-class BinaryFile {
-public:
-   BinaryFile(std::string filename);
+#define OUT_FILE_BUFFER_SIZE (64*1024)
 
-   virtual ~BinaryFile();
+class BinaryInFile {
+public:
+   BinaryInFile(std::string filename);
+
+   virtual ~BinaryInFile();
 
    size_t GetSize();
 
@@ -26,7 +29,7 @@ public:
 
 protected:
 
-   BinaryFile &self;
+   BinaryInFile &self;
 
    void Open();
 
@@ -35,6 +38,26 @@ protected:
    size_t mSize;
 };
 
+class BinaryOutFile {
+public:
+   BinaryOutFile(std::string filename);
 
+   virtual ~BinaryOutFile();
+
+   bool Write(uint8_t *data, size_t size);
+   void Close();
+
+protected:
+
+   std::string mFileName;
+   uint8_t *mData;
+   size_t   mSize;
+   uint32_t mBufferSize;
+   uint32_t mPosition;
+
+   std::ofstream mOS;
+
+   void FlushBuffer();
+};
 
 #endif /* BINARYFILE_HPP_ */

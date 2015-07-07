@@ -49,9 +49,26 @@ public:
    std::list<uint32_t> mAudioPID;
 };
 
-class Demux : public BinaryFile {
+class Mux : public BinaryOutFile {
 public:
-   Demux(std::string filename) : BinaryFile(filename),
+   Mux(std::string filename) : BinaryOutFile(filename) {
+
+   }
+
+   bool Put(PES_Packet &) {
+      bool rval = true;
+
+
+
+      return rval;
+   }
+
+private:
+};
+
+class Demux : public BinaryInFile {
+public:
+   Demux(std::string filename) : BinaryInFile(filename),
                                  mVerbose(true), mCurrentPointer(0),
                                  mError(NONE), mEOF(false) {
 

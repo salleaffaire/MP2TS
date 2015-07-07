@@ -330,7 +330,8 @@ main(int argc, char *argv[])
 
 #if 1
    MP2TS::PES_Packet packet;
-   MP2TS::Demux tsdemux("Stream1-2.ts");
+   //MP2TS::Demux tsdemux("Stream1-2.ts");
+   MP2TS::Demux tsdemux("decode_test_background_20120726_480p-1M.ts");
 
    unsigned int total_ts_packets = 0;
    while (!tsdemux.IsEOF()) {

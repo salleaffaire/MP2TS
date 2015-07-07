@@ -8,31 +8,32 @@
 
 #include "BinaryFile.hpp"
 #include <fstream>
+#include <cstring>
 
-BinaryFile::BinaryFile(std::string filename) : self(*this), mFileName(filename),
+BinaryInFile::BinaryInFile(std::string filename) : self(*this), mFileName(filename),
                                    mData((uint8_t *)0), mSize(0) {
    Open();
 }
 
-BinaryFile::~BinaryFile() {
+BinaryInFile::~BinaryInFile() {
    if (mData) {
       delete [] mData;
    }
 }
 
-size_t BinaryFile::GetSize() {
+size_t BinaryInFile::GetSize() {
    return mSize;
 }
 
-uint8_t *BinaryFile::GetDataPointer() {
+uint8_t *BinaryInFile::GetDataPointer() {
    return mData;
 }
 
-uint8_t &BinaryFile::operator[](uint32_t index) {
+uint8_t &BinaryInFile::operator[](uint32_t index) {
    return *(mData+index);
 }
 
-void BinaryFile::Save(std::string filename) {
+void BinaryInFile::Save(std::string filename) {
    std::ofstream os;
    os.open(filename.c_str(), std::ios::binary);
 
@@ -41,7 +42,7 @@ void BinaryFile::Save(std::string filename) {
    os.close();
 }
 
-void BinaryFile::Open() {
+void BinaryInFile::Open() {
 
    if (mData) {
       delete [] mData;
@@ -59,3 +60,58 @@ void BinaryFile::Open() {
 
    is.close();
 }
+
+
+
+BinaryOutFile::BinaryOutFile(std::string filename) : mFileName(filename),
+                                                     mData(0),
+                                                     mSize(0),
+                                                     mBufferSize(OUT_FILE_BUFFER_SIZE),
+                                                     mPosition(0) {
+   // Allocate interbal buffer
+   mData = new uint8_t [OUT_FILE_BUFFER_SIZE];
+
+   // Open the file
+   mOS.open(mFileName.c_str(), std::ios::binary);
+}
+
+BinaryOutFile::~BinaryOutFile() {
+   if (mData) delete [] mData;
+}
+
+bool BinaryOutFile::Write(uint8_t *data, size_t size) {
+   bool rval = true;
+
+   uint32_t bytes_left_in_buffer = OUT_FILE_BUFFER_SIZE - mPosition;
+
+   if (size > bytes_left_in_buffer) {
+      // First, writes the buffer to file
+      FlushBuffer();
+
+      // Write direct to file
+      mOS.write((char *)data, size);
+   }
+   else {
+      std::memcpy(mData+mPosition, data, size);
+      mPosition += size;
+
+      if (mPosition == mBufferSize) {
+         FlushBuffer();
+      }
+   }
+
+   return rval;
+}
+
+void BinaryOutFile::Close() {
+   FlushBuffer();
+   mPosition = 0;
+   mOS.close();
+}
+
+void BinaryOutFile::FlushBuffer() {
+   mOS.write((char *)mData, mPosition);
+   mPosition = 0;
+}
+
+
