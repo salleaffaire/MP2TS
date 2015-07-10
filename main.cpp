@@ -27,15 +27,15 @@ main(int argc, char *argv[])
 
 
 #if 1
-   //MP2TS::Demux tsdemux("Stream1-2.ts");
-   MP2TS::Demux tsdemux("football.ts");
+   MP2TS::Demux tsdemux("Stream1-2.ts");
+   //MP2TS::Demux tsdemux("football.ts");
    //MP2TS::Demux tsdemux("decode_test_background_20120726_480p-1M.ts");
 
    unsigned int total_ts_packets = 0;
    MP2TS::PES_Packet *packet;
    while (!tsdemux.IsEOF()) {
       tsdemux.Get(packet);
-      if (tsdemux.Error() == MP2TS::NONE) {
+      if (tsdemux.Error() == MP2TS::ErrorCode::NONE) {
          //std::cout << tsdemux.NumberOfTSPackets() << " TS packets have been read" << std::endl;
          total_ts_packets += tsdemux.NumberOfTSPackets();
          //std::cout << "Total TS Packet Read = " << total_ts_packets << std::endl;
@@ -47,7 +47,7 @@ main(int argc, char *argv[])
          }
       }
       else {
-         std::cout << "Error : " << tsdemux.Error() << std::endl;
+         std::cout << "Error !!" << std::endl;
          break;
       }
    }
@@ -55,6 +55,13 @@ main(int argc, char *argv[])
    // Output channel map
    for (auto &channel: tsdemux.GetChannelMap()) {
       std::cout << channel.first << " @ PID "<< channel.second.mPMTPID << std::endl;
+      std::cout << "  Channel PMT PDI = " << std::hex << std::setfill('0') << std::setw(4)
+                << channel.second.mPMTPID << std::dec << std::endl;
+
+      for (auto &stream: channel.second.mStreams) {
+         std::cout << "    Stream Type 0x" << std::hex << std::setfill('0') << std::setw(4) << stream.mType << std::dec << std::endl;
+         std::cout << "    Stream PID  0x" << std::hex << std::setfill('0') << std::setw(4) << stream.mPID << std::dec << std::endl;
+      }
    }
 
 #endif

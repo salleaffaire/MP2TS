@@ -12,6 +12,7 @@
 #include <cstring>
 #include <list>
 #include <map>
+#include <algorithm>
 
 #include "BinaryFile.hpp"
 
@@ -19,14 +20,13 @@
 
 namespace MP2TS {
 
-const uint32_t PAT_PID = 0;
-const uint32_t CAT_PID = 1;
-const uint32_t TSDT_PID = 2;
-const uint32_t IPMP_PID = 3;
-
+static const uint32_t PAT_PID = 0;
+static const uint32_t CAT_PID = 1;
+static const uint32_t TSDT_PID = 2;
+static const uint32_t IPMP_PID = 3;
 
 // Errors
-enum ErrorCode {
+enum class ErrorCode {
    NONE = 0,
    INCOMPLETE_PACKET = 0x100,
    INVALID_START_CODE = 0x101,
@@ -49,14 +49,25 @@ public:
    uint32_t mPID;
 };
 
+class Stream {
+public:
+   Stream(uint32_t type, uint32_t pid) : mType(type),
+                                         mPID(pid) {
+
+   }
+
+   uint32_t mType;
+   uint32_t mPID;
+};
+
 class Channel {
 public:
    Channel() : mPMTPID(0) {}
    Channel(uint32_t pmtpid) : mPMTPID(pmtpid) {}
 
    uint32_t            mPMTPID;
-   std::list<uint32_t> mVideoPID;
-   std::list<uint32_t> mAudioPID;
+   std::list<Stream>   mStreams;
+
 };
 
 class Mux : public BinaryOutFile {
@@ -80,7 +91,7 @@ class Demux : public BinaryInFile {
 public:
    Demux(std::string filename) : BinaryInFile(filename),
                                  mVerbose(true), mCurrentPointer(0),
-                                 mError(NONE), mEOF(false), mNumberOfTSPackets(0) {
+                                 mError(ErrorCode::NONE), mEOF(false), mNumberOfTSPackets(0) {
 
    }
 
@@ -224,7 +235,7 @@ public:
                mNumberOfTSPackets++;
             }
             else {
-               mError = INVALID_START_CODE;
+               mError = ErrorCode::INVALID_START_CODE;
                break;
             }
          }
@@ -277,9 +288,6 @@ public:
          if (mVerbose) {
             std::cout << "Parsing Assigned PID *********************************** 0x"
                       << std::hex << std::setfill('0') << std::setw(6) << mPID << std::dec << std::endl;
-            if ((mPID == 32) || (mPID == 48) || (mPID == 64)) {
-               std::cout << "PMT" << std::endl;
-            }
          }
          ParseAssigned(packet);
       }
@@ -345,6 +353,7 @@ public:
          if (mVerbose == true) {
             std::cout << "   PMT_PID= " << (pmt_pid & 0x1fff) << std::endl;
          }
+         mPMTPIDtoChannelNumber[pmt_pid & 0x1fff] = program_number;
          mChannelMap.insert( std::map< uint32_t, Channel >::value_type ( program_number, Channel(pmt_pid & 0x1fff) ) );
          //mChannelMap[program_number] = Channel(pmt_pid);
       }
@@ -393,7 +402,11 @@ public:
 
       std::cout << "Bytes left in PMT ------------------------------ " << bytes_left << std::endl;
 
+      Channel channel;
+      channel.mPMTPID = packet->mPID;
+
       while (bytes_left > 0) {
+
          unsigned int stream_type = 0;
          stream_type = *data;
          data++;
@@ -405,8 +418,10 @@ public:
          data++;
          pid |= *data;
          data++;
+         pid &= 0x1fff;
 
          std::cout << "PID = "  << pid << std::endl;
+         channel.mStreams.push_back(std::move(Stream(stream_type, pid)));
 
          // Skip to next
          unsigned int elementary_stream_descriptor_length = 0;
@@ -417,7 +432,10 @@ public:
 
          elementary_stream_descriptor_length &= 0x3ff;
          data += elementary_stream_descriptor_length;
+
+         bytes_left -= (5+elementary_stream_descriptor_length);
       }
+      mChannelMap[mPMTPIDtoChannelNumber[channel.mPMTPID]] = std::move(channel);
 
       // Update the CRC
       // CRC will be located at data[5+crc_length]
@@ -438,7 +456,6 @@ public:
          ParsePMT(packet);
       }
       else {
-         std::cout << "PID Not Found" << std::endl;
          // Is there a PES start code?
          uint8_t *data = packet->mData;
 
@@ -518,7 +535,7 @@ private:
    uint64_t mOPCR;
    uint64_t mSpliceCountDown;
 
-   std::list<Channel>          mChannelList;
+   std::map<uint32_t, uint32_t> mPMTPIDtoChannelNumber;
    std::map<uint32_t, Channel> mChannelMap;
 
    bool IsAPMTPID(uint32_t pid) {
