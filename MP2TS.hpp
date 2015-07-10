@@ -13,7 +13,7 @@
 #include <list>
 #include <map>
 
-#define PES_PACKET_MAXSIZE 64 * 1024
+#define PES_PACKET_MAXSIZE 256 * 1024
 
 namespace MP2TS {
 
@@ -32,7 +32,15 @@ enum ErrorCode {
 
 class PES_Packet {
 public:
-   uint8_t  mData[PES_PACKET_MAXSIZE];
+   PES_Packet() : mSize(0), mPID(0) {
+      mData = mWritePointer = new uint8_t [PES_PACKET_MAXSIZE];
+
+   }
+   ~PES_Packet() {
+      if (mData) delete [] mData;
+   }
+   uint8_t *mData;
+   uint8_t *mWritePointer;
    uint32_t mSize;
 
    // Forward protocol layering
@@ -74,12 +82,12 @@ public:
 
    }
 
-   bool Get(PES_Packet &packet) {
+   bool Get(PES_Packet *&returned_packet) {
       bool rval = true;
 
       // PES Write Pointer
-      uint8_t *write_pointer = packet.mData;
       uint32_t temp;
+      returned_packet = (PES_Packet *)0;
 
       // Find first TS packet with Start Indicator = 1
       while ((mData[0] == 0x47) && !(mData[1] & 0x40)) {
@@ -93,6 +101,18 @@ public:
       bool packet_complete = false;
       mAdaptationFieldWasPresent = false;
       do {
+         // Advance to the first sync byte 0x47
+         uint32_t bytes_skipped = 0;
+         while (((mSize - mCurrentPointer) > 0) && (mData[mCurrentPointer] != 0x47)) {
+             mCurrentPointer++;
+             bytes_skipped++;
+         }
+         if (mVerbose) {
+            if (bytes_skipped > 0) {
+               std::cout << "Skipped " << bytes_skipped << " bytes. " << std::endl;
+            }
+         }
+
          uint32_t start_pointer = mCurrentPointer;
          // If there is enough room fo ran extra TS packet
          // PS packet size = 188 bytes
@@ -102,7 +122,7 @@ public:
                // -----------------------------------------------------------------
                // Read PID
                temp = ((mData[mCurrentPointer]) << 8) | mData[mCurrentPointer+1];
-               packet.mPID = mPID = temp & 0x1fff;
+               mPID = temp & 0x1fff;
                mTEI = temp & 0x8000;
                mPayloadUnitStartIndicator = temp & 0x4000;
                mTransportPriority = temp & 0x2000;
@@ -162,22 +182,36 @@ public:
                   mCurrentPointer += number_of_stuffing_bytes;
                }
 
-               if (mContainsPayload) {
+               PES_Packet *current_packet = (PES_Packet *)0;
+
+               // If it is the start of a new payload
+               if (mPayloadUnitStartIndicator) {
+                  current_packet = new PES_Packet;
+                  // If we already have a PES_Packet with the same PID
+                  if (AsAPIDPacket(mPID)) {
+                     packet_complete = true;
+                     returned_packet = mPESPacketsMap[mPID];
+                  }
+                  mPESPacketsMap[mPID] = current_packet;
+               }
+               else {
+                  if (AsAPIDPacket(mPID)) {
+                     current_packet = mPESPacketsMap[mPID];
+                  }
+               }
+
+               uint32_t bytes_left = 188 - (mCurrentPointer - start_pointer);
+               // If we have a current packet
+               if ((current_packet) && (mContainsPayload)) {
+                  uint8_t *write_pointer = (current_packet->mData)+(current_packet->mSize);
                   // Copy Payload into the write buffer
-                  uint32_t bytes_left = 188 - (mCurrentPointer - start_pointer);
+                  //std::cout << "Bytes left : " << bytes_left << " written." << std::endl;
+                  //std::cout << "In a packet of size : " << current_packet->mSize << std::endl;
                   std::memcpy(write_pointer, &(mData[mCurrentPointer]), bytes_left);
+                  current_packet->mSize += bytes_left;
 
-                  // Advance both the read and write pointers by bytes_left
-                  write_pointer += bytes_left;
-                  mCurrentPointer += bytes_left;
-
-                  //
                }
-
-               // Test if next packet is the start of a new PES Packet
-               if ((mData[mCurrentPointer+0] == 0x47) && (mData[mCurrentPointer+1] & 0x40)) {
-                  packet_complete = true;
-               }
+               mCurrentPointer += bytes_left;
 
                mNumberOfTSPackets++;
             }
@@ -378,6 +412,13 @@ private:
 
    uint32_t mSectionNumber;
    uint32_t mLastSectionNumber;
+
+   // Maps <PID, PES_Packet *>
+   std::map<uint32_t, PES_Packet *> mPESPacketsMap;
+
+   bool AsAPIDPacket(uint32_t pid) {
+      return !(mPESPacketsMap.find(pid) == mPESPacketsMap.end());
+   }
 
    // Returns the number of bytes parsed
    uint32_t ParsePSIHeader(PES_Packet &packet) {

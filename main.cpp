@@ -329,24 +329,26 @@ main(int argc, char *argv[])
 
 
 #if 1
-   MP2TS::PES_Packet packet;
    //MP2TS::Demux tsdemux("Stream1-2.ts");
-   MP2TS::Demux tsdemux("decode_test_background_20120726_480p-1M.ts");
+   MP2TS::Demux tsdemux("football.ts");
+   //MP2TS::Demux tsdemux("decode_test_background_20120726_480p-1M.ts");
 
    unsigned int total_ts_packets = 0;
+   MP2TS::PES_Packet *packet;
    while (!tsdemux.IsEOF()) {
       tsdemux.Get(packet);
       if (tsdemux.Error() == MP2TS::NONE) {
-         std::cout << "PES Packet of " << tsdemux.NumberOfTSPackets() << " TS packets - PID = "
-                   << tsdemux.GetPID() << std::endl;
+         std::cout << tsdemux.NumberOfTSPackets() << " TS packets have been read" << std::endl;
          total_ts_packets += tsdemux.NumberOfTSPackets();
-         std::cout << "Total = " << total_ts_packets << std::endl;
+         std::cout << "Total TS Packet Read = " << total_ts_packets << std::endl;
 
-         // Parse PES Packet
-         tsdemux.Parse(packet);
+         if (packet) {
+            std::cout << "Received a " << packet->mSize << " bytes packet." << std::endl;
+            delete packet;
+         }
       }
       else {
-         std::cout << tsdemux.Error() << std::endl;
+         std::cout << "Error : " << tsdemux.Error() << std::endl;
          break;
       }
    }
