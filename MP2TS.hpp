@@ -13,6 +13,8 @@
 #include <list>
 #include <map>
 
+#include "BinaryFile.hpp"
+
 #define PES_PACKET_MAXSIZE 256 * 1024
 
 namespace MP2TS {
@@ -78,7 +80,7 @@ class Demux : public BinaryInFile {
 public:
    Demux(std::string filename) : BinaryInFile(filename),
                                  mVerbose(true), mCurrentPointer(0),
-                                 mError(NONE), mEOF(false) {
+                                 mError(NONE), mEOF(false), mNumberOfTSPackets(0) {
 
    }
 
@@ -96,7 +98,7 @@ public:
       }
 
       // Keep track of the number of TS packets per PES packet
-      mNumberOfTSPackets = 0;
+      mNumberOfTSPacketsPerPESPacket = 0;
 
       bool packet_complete = false;
       mAdaptationFieldWasPresent = false;
@@ -131,9 +133,11 @@ public:
                // Next 8 bits
                temp = mData[mCurrentPointer++];
                mScramblingControl = (temp & 0xC0) >> 6;
-               mAdaptationFieldExist = (temp & 0x2) >> 5;
+               mAdaptationFieldExist = (temp & 0x20) >> 5;
                mContainsPayload = (temp & 0x10) >> 4;
                mContinuityCounter = (temp & 0x0f);
+
+               //std::cout << mPID << " @  TS Packet " <<  mNumberOfTSPackets << std::endl;
 
                // If Present - Parse the Adaptation Field
                // ----------------------------------------------------------------
@@ -182,11 +186,14 @@ public:
                   mCurrentPointer += number_of_stuffing_bytes;
                }
 
+               // Find a PES Packet to wriet the data into
+               // --------------------------------------------------------------------
                PES_Packet *current_packet = (PES_Packet *)0;
 
                // If it is the start of a new payload
                if (mPayloadUnitStartIndicator) {
                   current_packet = new PES_Packet;
+                  current_packet->mPID = mPID;
                   // If we already have a PES_Packet with the same PID
                   if (AsAPIDPacket(mPID)) {
                      packet_complete = true;
@@ -199,6 +206,7 @@ public:
                      current_packet = mPESPacketsMap[mPID];
                   }
                }
+               // --------------------------------------------------------------------
 
                uint32_t bytes_left = 188 - (mCurrentPointer - start_pointer);
                // If we have a current packet
@@ -209,10 +217,10 @@ public:
                   //std::cout << "In a packet of size : " << current_packet->mSize << std::endl;
                   std::memcpy(write_pointer, &(mData[mCurrentPointer]), bytes_left);
                   current_packet->mSize += bytes_left;
-
                }
                mCurrentPointer += bytes_left;
 
+               mNumberOfTSPacketsPerPESPacket++;
                mNumberOfTSPackets++;
             }
             else {
@@ -234,62 +242,69 @@ public:
       return rval;
    }
 
-   bool Parse(PES_Packet &packet) {
+   bool Parse(PES_Packet *packet) {
       bool rval = true;
 
       // Decode Program Association Table
-      if (mPID == PAT_PID) {
+      if (packet->mPID == PAT_PID) {
          if (mVerbose) {
             std::cout << "Parsing PAT" << std::endl;
          }
          ParsePAT(packet);
       }
       // TODO: Conditional Access Table
-      else if (mPID == CAT_PID) {
+      else if (packet->mPID == CAT_PID) {
 
       }
       // TODO: Transport Stream Description Table
-      else if (mPID == TSDT_PID) {
+      else if (packet->mPID == TSDT_PID) {
 
       }
       // TODO: IPMP Control Information Table
-      else if (mPID == IPMP_PID) {
+      else if (packet->mPID == IPMP_PID) {
 
       }
       // Reserved - this should not happen
-      else if ((mPID >= 0x4) && (mPID <= 0xf)) {
+      else if ((packet->mPID >= 0x4) && (mPID <= 0xf)) {
 
       }
       // DVB Metadata
-      else if ((mPID >= 0x10) && (mPID <= 0x1f)) {
+      else if ((packet->mPID >= 0x10) && (mPID <= 0x1f)) {
 
       }
       // Assigned by PMT
-      else if (((mPID >= 0x20) && (mPID <= 0x1ffa))) {
+      else if (((packet->mPID >= 0x20) && (mPID <= 0x1ffa))) {
          if (mVerbose) {
-            std::cout << "Parsing Assigned PID" << std::endl;
+            std::cout << "Parsing Assigned PID *********************************** 0x"
+                      << std::hex << std::setfill('0') << std::setw(6) << mPID << std::dec << std::endl;
+            if ((mPID == 32) || (mPID == 48) || (mPID == 64)) {
+               std::cout << "PMT" << std::endl;
+            }
          }
          ParseAssigned(packet);
       }
       // TODO: Used by DigiCypher 2/ATSC MGT  Metadata
-      else if (mPID == 0x1ffb) {
+      else if (packet->mPID == 0x1ffb) {
 
       }
       // Assigned by PMT
-      else if (((mPID >= 0x1ffc) && (mPID <= 0x1ffe))) {
+      else if (((packet->mPID >= 0x1ffc) && (mPID <= 0x1ffe))) {
          if (mVerbose) {
-            std::cout << "Parsing Assigned PID" << std::endl;
+            std::cout << "Parsing Assigned PID *********************************** 0x"
+                      << std::hex << std::setfill('0') << std::setw(6) << mPID << std::dec << std::endl;
          }
          ParseAssigned(packet);
       }
       // TODO: Null Packet
-      else if (mPID == 0x1fff) {
+      else if (packet->mPID == 0x1fff) {
 
       }
       return rval;
    }
 
-   bool ParsePAT(PES_Packet &packet) {
+
+
+   bool ParsePAT(PES_Packet *packet) {
       bool rval = true;
 
       // Parser the PSI Header
@@ -297,7 +312,7 @@ public:
 
       // After the PSI Header the pointer needs to advance by
       // mFillerLength + 8
-      uint8_t *data = packet.mData + mFillerLength + 8;
+      uint8_t *data = packet->mData + mFillerLength + 8;
 
       // Start decoding PAT
       // bytes left excluding the CRC is
@@ -337,14 +352,117 @@ public:
       return rval;
    }
 
-   bool ParseAssigned(PES_Packet &packet) {
-      bool rval = true;
+   bool ParsePMT(PES_Packet *packet) {
+      bool rval = 0;
+
+      // Parser the PSI Header
+      ParsePSIHeader(packet);
+
+      // After the PSI Header the pointer needs to advance by
+      // mFillerLength + 8
+      uint8_t *data = packet->mData + mFillerLength + 8;
+
+      // Start decoding PMT
+
+      uint32_t pcr_pid = 0;
+      pcr_pid |= *data << 8;
+      data++;
+      pcr_pid |= *data;
+      data++;
+      //std::cout << "PRC PID = " << (pcr_pid & 0x1fff) << std::endl;
+
+      uint32_t program_info_length = 0;
+      program_info_length |= *data << 8;
+      data++;
+      program_info_length |= *data;
+      data++;
+      program_info_length &= 0x03ff;
+
+      // Skip program descriptor bytes
+      data += program_info_length;
+
+      // For all stream
+      // TODO :: This toooo simple - right now only expecting 1 video and 1 audio ES
+
+      // Bytes left excluding the CRC is
+      // Section Length - (5) Syntax PIS Header - (4) CRC - (4) Syntax PMT - program_info_length
+      // Section Length = CRC Length + 1
+      // Bytes Left = CRC Length + 1 - 5 - 4 - 4 - program_info_length
+      // Bytes Left = CRC Length - 12 - program_info_length
+      uint32_t bytes_left = mCRCLength - 12 - program_info_length;
+
+      std::cout << "Bytes left in PMT ------------------------------ " << bytes_left << std::endl;
+
+      while (bytes_left > 0) {
+         unsigned int stream_type = 0;
+         stream_type = *data;
+         data++;
+
+         std::cout << "Stream Type : = "  << stream_type << std::endl;
+
+         unsigned int pid = 0;
+         pid |= *data << 8;
+         data++;
+         pid |= *data;
+         data++;
+
+         std::cout << "PID = "  << pid << std::endl;
+
+         // Skip to next
+         unsigned int elementary_stream_descriptor_length = 0;
+         elementary_stream_descriptor_length |= *data << 8;
+         data++;
+         elementary_stream_descriptor_length |= *data;
+         data++;
+
+         elementary_stream_descriptor_length &= 0x3ff;
+         data += elementary_stream_descriptor_length;
+      }
+
+      // Update the CRC
+      // CRC will be located at data[5+crc_length]
+      //crc = gCRC(crc_payload, crc_length);
+      //data[5+crc_length+0] = (crc >> 24) & 0xFF;
+      //data[5+crc_length+1] = (crc >> 16) & 0xFF;
+      //data[5+crc_length+2] = (crc >> 8)  & 0xFF;
+      //data[5+crc_length+3] = (crc)       & 0xFF;
+
 
       return rval;
    }
 
+   bool ParseAssigned(PES_Packet *packet) {
+      bool rval = true;
+
+      if (IsAPMTPID(packet->mPID)) {
+         ParsePMT(packet);
+      }
+      else {
+         std::cout << "PID Not Found" << std::endl;
+         // Is there a PES start code?
+         uint8_t *data = packet->mData;
+
+         uint32_t start_code = 0;
+         start_code = *data;
+         start_code = (start_code << 8) | *(data+1);
+         start_code = (start_code << 8) | *(data+2);
+
+         //std::cout << "Start Code : 0x" << std::hex << std::setfill('0') << std::setw(6)
+         //          << start_code << std::dec << std::endl;
+
+         // Found a stream
+         if (start_code == 0x000001) {
+            // Skip start code
+            data += 3;
+            //std::cout << "Stream ID : 0x" << std::hex << std::setfill('0') << std::setw(2)
+            //          << (int)*data << std::dec << std::endl;
+         }
+      }
+      return rval;
+   }
+
    uint32_t NumberOfTSPackets() {
-      return mNumberOfTSPackets;
+      return mNumberOfTSPacketsPerPESPacket;
    }
 
    uint32_t GetPID() {
@@ -371,6 +489,8 @@ private:
    ErrorCode mError;
    bool      mEOF;
    uint32_t  mNumberOfTSPackets;
+   uint32_t  mNumberOfTSPacketsPerPESPacket;
+
 
    // Transport Stream Header
    uint32_t mPID;
@@ -398,7 +518,19 @@ private:
    uint64_t mOPCR;
    uint64_t mSpliceCountDown;
 
+   std::list<Channel>          mChannelList;
    std::map<uint32_t, Channel> mChannelMap;
+
+   bool IsAPMTPID(uint32_t pid) {
+      bool rval = false;
+      for (auto channel: mChannelMap) {
+         if (channel.second.mPMTPID == pid) {
+            rval = true;
+            break;
+         }
+      }
+      return rval;
+   }
 
    // CRC holder
    //
@@ -421,8 +553,8 @@ private:
    }
 
    // Returns the number of bytes parsed
-   uint32_t ParsePSIHeader(PES_Packet &packet) {
-      uint8_t *data = packet.mData;
+   uint32_t ParsePSIHeader(PES_Packet *packet) {
+      uint8_t *data = packet->mData;
 
       // Skip filler
       unsigned int pointer_field = *data++;
@@ -476,7 +608,7 @@ private:
       mLastSectionNumber = *data++;
       //std::cout << "Last Section Number = " << last_section_number << std::endl;
 
-      uint32_t bytes_read = (data-packet.mData);
+      uint32_t bytes_read = (data-packet->mData);
       return bytes_read;
    }
 };

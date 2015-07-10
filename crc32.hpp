@@ -24,8 +24,10 @@ public:
 
    uint32_t operator()(unsigned char *buffer, unsigned int length) {
        uint32_t i_crc = IN;
-       for( unsigned int i = 0; (size_t)i < length; i++ )
-       i_crc = (i_crc << 8) ^ mTable[((i_crc >> 24) ^ buffer[i]) & 0xff];
+       for(unsigned int i = 0; i < length;i++) {
+
+          i_crc = (i_crc << 8) ^ mTable[((i_crc >> 24) ^ buffer[i]) & 0xff];
+       }
 
        return i_crc ^ OUT;
    }
