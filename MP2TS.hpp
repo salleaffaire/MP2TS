@@ -13,10 +13,11 @@
 #include <list>
 #include <map>
 #include <algorithm>
+#include <memory>
 
 #include "BinaryFile.hpp"
 
-#define PES_PACKET_MAXSIZE 256 * 1024
+#define PES_PACKET_MAXSIZE 2048 * 1024
 
 namespace MP2TS {
 
@@ -26,15 +27,23 @@ static const uint32_t TSDT_PID = 2;
 static const uint32_t IPMP_PID = 3;
 
 // Errors
+// -----------------------------------------------------------------------------------------
 enum class ErrorCode {
    NONE = 0,
    INCOMPLETE_PACKET = 0x100,
-   INVALID_START_CODE = 0x101,
+   INVALID_START_CODE = 0x101
 };
 
+enum PESPacketState {
+   OK = 0x00,
+   CONTINUITY_ERROR = 0x01
+};
+
+// Media Classes
+// -----------------------------------------------------------------------------------------
 class PES_Packet {
 public:
-   PES_Packet() : mSize(0), mPID(0) {
+   PES_Packet() : mSize(0), mContinuityCounter(0), mState(0), mPID(0) {
       mData = mWritePointer = new uint8_t [PES_PACKET_MAXSIZE];
 
    }
@@ -44,6 +53,8 @@ public:
    uint8_t *mData;
    uint8_t *mWritePointer;
    uint32_t mSize;
+   uint8_t  mContinuityCounter;
+   uint32_t mState;
 
    // Forward protocol layering
    uint32_t mPID;
@@ -70,6 +81,8 @@ public:
 
 };
 
+// MPEG-2 TS Multiplexer Main Class
+// -----------------------------------------------------------------------------------------
 class Mux : public BinaryOutFile {
 public:
    Mux(std::string filename) : BinaryOutFile(filename) {
@@ -87,12 +100,21 @@ public:
 private:
 };
 
+// MPEG-2 TS Demultiplexer Main Class
+// -----------------------------------------------------------------------------------------
 class Demux : public BinaryInFile {
 public:
    Demux(std::string filename) : BinaryInFile(filename),
                                  mVerbose(true), mCurrentPointer(0),
                                  mError(ErrorCode::NONE), mEOF(false), mNumberOfTSPackets(0) {
 
+   }
+
+   ~Demux() {
+      // Cleaning unused or unreturned packets
+      for (auto packet: mPESPacketsMap) {
+         delete packet.second;
+      }
    }
 
    bool Get(PES_Packet *&returned_packet) {
@@ -205,6 +227,7 @@ public:
                if (mPayloadUnitStartIndicator) {
                   current_packet = new PES_Packet;
                   current_packet->mPID = mPID;
+                  current_packet->mContinuityCounter = mContinuityCounter;
                   // If we already have a PES_Packet with the same PID
                   if (AsAPIDPacket(mPID)) {
                      packet_complete = true;
@@ -222,6 +245,17 @@ public:
                uint32_t bytes_left = 188 - (mCurrentPointer - start_pointer);
                // If we have a current packet
                if ((current_packet) && (mContainsPayload)) {
+                  // Check continuity counter
+                  if (mContinuityCounter != current_packet->mContinuityCounter) {
+                     current_packet->mState |= MP2TS::PESPacketState::CONTINUITY_ERROR;
+                     if (mVerbose) {
+                        std::cout << "Error: Invalid continuity counter" << std::endl;
+                        std::cout << "  Expected : " << (int) current_packet->mContinuityCounter << " but found : "
+                                  <<  mContinuityCounter << std::endl;
+                     }
+                  }
+                  current_packet->mContinuityCounter = (current_packet->mContinuityCounter + 1) & 0xf;
+
                   uint8_t *write_pointer = (current_packet->mData)+(current_packet->mSize);
                   // Copy Payload into the write buffer
                   //std::cout << "Bytes left : " << bytes_left << " written." << std::endl;
