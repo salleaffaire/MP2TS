@@ -8,12 +8,15 @@
 #ifndef MP2TS_HPP_
 #define MP2TS_HPP_
 
+#include <iostream>
+#include <iomanip>
 #include <cstdint>
 #include <cstring>
 #include <list>
 #include <map>
 #include <algorithm>
 #include <memory>
+#include <vector>
 
 #include "BinaryFile.hpp"
 
@@ -25,6 +28,10 @@ static const uint32_t PAT_PID = 0;
 static const uint32_t CAT_PID = 1;
 static const uint32_t TSDT_PID = 2;
 static const uint32_t IPMP_PID = 3;
+
+// Misc
+// -----------------------------------------------------------------------------------------
+extern std::vector<std::string> gStreamTypeName;
 
 // Errors
 // -----------------------------------------------------------------------------------------
