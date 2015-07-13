@@ -25,12 +25,29 @@ main(int argc, char *argv[])
    ts_file.Save("output.ts");
 #endif
 
+#if 0
+
+   unsigned int i = 0;
+   for (auto &st_name: MP2TS::gStreamTypeName) {
+      std::cout << "0x" << std::hex << std::setfill('0') << std::setw(2) << i << " : " << st_name << std::endl;
+      ++i;
+   }
+
+#endif
 
 #if 1
-   //MP2TS::Demux tsdemux("Stream1-2.ts");
+   MP2TS::Demux tsdemux("Stream1-2.ts");
+
    //MP2TS::Demux tsdemux("football.ts");
-   MP2TS::Demux tsdemux("decode_test_background_20120726_480p-1M.ts");
+   //MP2TS::Demux tsdemux("decode_test_background_20120726_480p-1M.ts");
    //MP2TS::Demux tsdemux("Beauty_3840x2160_120fps_420_8bit_HEVC_TS.ts");
+
+   // Make is quiet
+   tsdemux.SetVerbosity(false);
+
+   // Processing Loop
+   std::cout << "PES Packets Processing Loop" << std::endl;
+   std::cout << "-----------------------------------------------------" << std::endl;
    unsigned int total_ts_packets = 0;
    MP2TS::PES_Packet *packet;
    while (!tsdemux.IsEOF()) {
@@ -54,14 +71,18 @@ main(int argc, char *argv[])
    }
 
    // Output channel map
+   std::cout << "Channel Map" << std::endl;
+   std::cout << "-----------------------------------------------------" << std::endl;
    for (auto &channel: tsdemux.GetChannelMap()) {
       std::cout << channel.first << " @ PID "<< channel.second.mPMTPID << std::endl;
       std::cout << "  Channel PMT PDI = " << std::hex << std::setfill('0') << std::setw(4)
                 << channel.second.mPMTPID << std::dec << std::endl;
 
+      unsigned int stream_num = 0;
       for (auto &stream: channel.second.mStreams) {
-         std::cout << "    Stream Type 0x" << std::hex << std::setfill('0') << std::setw(4) << stream.mType << std::dec << std::endl;
-         std::cout << "    Stream PID  0x" << std::hex << std::setfill('0') << std::setw(4) << stream.mPID << std::dec << std::endl;
+         std::cout << "    " << stream_num << ": Stream Type 0x" << std::hex << std::setfill('0') << std::setw(4) << stream.GetStreamTypeName() << std::dec << std::endl;
+         std::cout << "    " << stream_num << ": Stream PID  0x" << std::hex << std::setfill('0') << std::setw(4) << stream.mPID << std::dec << std::endl;
+         ++stream_num;
       }
    }
 

@@ -24,6 +24,8 @@
 
 namespace MP2TS {
 
+#define TS_PACKET_LENGTH 188
+
 static const uint32_t PAT_PID = 0;
 static const uint32_t CAT_PID = 1;
 static const uint32_t TSDT_PID = 2;
@@ -32,6 +34,11 @@ static const uint32_t IPMP_PID = 3;
 // Misc
 // -----------------------------------------------------------------------------------------
 extern std::vector<std::string> gStreamTypeName;
+
+
+std::string &GetStreamType(uint8_t st) {
+   return gStreamTypeName[st];
+}
 
 // Errors
 // -----------------------------------------------------------------------------------------
@@ -76,6 +83,10 @@ public:
 
    uint32_t mType;
    uint32_t mPID;
+
+   std::string &GetStreamTypeName() {
+      return gStreamTypeName[mType];
+   }
 };
 
 class Channel {
@@ -96,15 +107,66 @@ public:
 
    }
 
-   bool Put(PES_Packet &) {
+   bool Put(PES_Packet *packet) {
       bool rval = true;
 
+      // Build a series of TS packets
+      uint32_t bytes_left = packet->mSize;
+      uint32_t pid        = packet->mPID;
+      do {
 
+      } while (bytes_left);
+
+      return rval;
+   }
+
+   bool BuildPMT(PES_Packet *packet) {
+      bool rval = true;
+
+      return rval;
+   }
+
+   bool BuildPAT(PES_Packet *packet) {
+      bool rval = true;
+
+      return rval;
+   }
+
+   bool AddChannel(uint32_t channel_number, uint32_t pmt_pid) {
+      bool rval = true;
+
+      // Add the channel to the data structures
+      mPMTPIDtoChannelNumber[pmt_pid] = channel_number;
+      mChannelMap[channel_number] = Channel(pmt_pid);
+
+      return rval;
+   }
+
+   bool AddStreamToChannel(uint32_t channel_number, uint32_t pid, uint32_t stream_type) {
+      bool rval = true;
+
+      if (IsAChannel(channel_number)) {
+         mChannelMap[channel_number].mStreams.push_back(Stream(stream_type, pid));
+      }
+      else {
+         rval = false;
+      }
 
       return rval;
    }
 
 private:
+   //
+   std::map<uint32_t, uint32_t> mPMTPIDtoChannelNumber;
+   std::map<uint32_t, Channel>  mChannelMap;
+
+   bool IsAChannel(uint32_t channel_number) {
+      return !(mChannelMap.find(channel_number) == mChannelMap.end());
+   }
+
+
+   // This is where the TS MUX writes
+   uint8_t mCurrentTSPacket[TS_PACKET_LENGTH];
 };
 
 // MPEG-2 TS Demultiplexer Main Class
@@ -134,7 +196,7 @@ public:
       // Find first TS packet with Start Indicator = 1
       while ((mData[0] == 0x47) && !(mData[1] & 0x40)) {
          // Skip to next packet
-         mData += 188;
+         mData += TS_PACKET_LENGTH;
       }
 
       // Keep track of the number of TS packets per PES packet
@@ -158,7 +220,7 @@ public:
          uint32_t start_pointer = mCurrentPointer;
          // If there is enough room fo ran extra TS packet
          // PS packet size = 188 bytes
-         if ((mSize - mCurrentPointer) >= 188) {
+         if ((mSize - mCurrentPointer) >= TS_PACKET_LENGTH) {
             if (mData[mCurrentPointer++] == 0x47) {
                // Parsing The Tansport Stream Header (First 32 bits)
                // -----------------------------------------------------------------
@@ -249,7 +311,7 @@ public:
                }
                // --------------------------------------------------------------------
 
-               uint32_t bytes_left = 188 - (mCurrentPointer - start_pointer);
+               uint32_t bytes_left = TS_PACKET_LENGTH - (mCurrentPointer - start_pointer);
                // If we have a current packet
                if ((current_packet) && (mContainsPayload)) {
                   // Check continuity counter
@@ -441,7 +503,7 @@ public:
       // Bytes Left = CRC Length - 12 - program_info_length
       uint32_t bytes_left = mCRCLength - 12 - program_info_length;
 
-      std::cout << "Bytes left in PMT ------------------------------ " << bytes_left << std::endl;
+      //std::cout << "Bytes left in PMT ------------------------------ " << bytes_left << std::endl;
 
       Channel channel;
       channel.mPMTPID = packet->mPID;
@@ -452,7 +514,9 @@ public:
          stream_type = *data;
          data++;
 
-         std::cout << "Stream Type : = "  << stream_type << std::endl;
+         if (mVerbose) {
+            std::cout << "Stream Type : = "  << stream_type << std::endl;
+         }
 
          unsigned int pid = 0;
          pid |= *data << 8;
@@ -461,7 +525,10 @@ public:
          data++;
          pid &= 0x1fff;
 
-         std::cout << "PID = "  << pid << std::endl;
+         if (mVerbose) {
+            std::cout << "PID = "  << pid << std::endl;
+         }
+
          channel.mStreams.push_back(std::move(Stream(stream_type, pid)));
 
          // Skip to next
@@ -537,6 +604,10 @@ public:
 
    std::map<uint32_t, Channel> &GetChannelMap() {
       return mChannelMap;
+   }
+
+   void SetVerbosity(bool x) {
+      mVerbose = x;
    }
 
 private:
