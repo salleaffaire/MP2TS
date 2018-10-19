@@ -5,13 +5,25 @@
  *      Author: luc.martel
  */
 
-#include "BinaryFile.hpp"
+#include "binaryfile.hpp"
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <string>
 
 BinaryInFile::BinaryInFile(std::string filename)
     : self(*this), mFileName(filename), mData((uint8_t *)0), mSize(0) {
   Open();
+}
+
+BinaryInFile::BinaryInFile(std::vector<uint8_t> &data)
+    : self(*this), mFileName(""), mData((uint8_t *)0), mSize(0) {
+  mData = new uint8_t[data.size()];
+  mSize = data.size();
+
+  // Copy the data
+  // TODO: Optimize later - remove the copy
+  std::memcpy(mData, data.data(), mSize);
 }
 
 BinaryInFile::~BinaryInFile() {

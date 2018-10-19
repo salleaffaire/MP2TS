@@ -4,11 +4,14 @@
 #include <list>
 #include <string>
 
+#define STREAMID_MIN 0xE0
+#define STREAMID_MAX 0xEF
+
 // Misc
 // -----------------------------------------------------------------------------------------
 extern std::vector<std::string> gStreamTypeName;
 
-std::string &GetStreamType(uint8_t st) { return gStreamTypeName[st]; }
+static std::string &GetStreamType(uint8_t st) { return gStreamTypeName[st]; }
 
 enum PESPacketState { OK = 0x00, CONTINUITY_ERROR = 0x01 };
 
@@ -17,11 +20,15 @@ enum PESPacketState { OK = 0x00, CONTINUITY_ERROR = 0x01 };
 class PES_Packet {
  public:
   PES_Packet()
-      : mSize(0),
+      : mData((uint8_t *)0),
+        mDataPESPayload((uint8_t *)0),
+        mSize(0),
         mContinuityCounter(0),
         mState(0),
         mStreamId(0),
         mPTSDTSIndicator(0),
+        mPTS(0),
+        mDTS(0),
         mPID(0) {
     mData = mWritePointer = new uint8_t[PES_PACKET_MAXSIZE];
   }
@@ -34,6 +41,9 @@ class PES_Packet {
 
   // Points to the beginning
   uint8_t *mData;
+  // Points to the beginning of the PES packet payload (set after Parse).
+  uint8_t *mDataPESPayload;
+
   // Points to the end (where to write)
   uint8_t *mWritePointer;
 

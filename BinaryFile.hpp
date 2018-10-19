@@ -10,54 +10,54 @@
 
 #include <fstream>
 #include <string>
+#include <vector>
 
-#define OUT_FILE_BUFFER_SIZE (64*1024)
+#define OUT_FILE_BUFFER_SIZE (64 * 1024)
 
 class BinaryInFile {
-public:
-   BinaryInFile(std::string filename);
+ public:
+  BinaryInFile(std::string filename);
+  BinaryInFile(std::vector<uint8_t> &data);
 
-   virtual ~BinaryInFile();
+  virtual ~BinaryInFile();
 
-   size_t GetSize();
+  size_t GetSize();
 
-   uint8_t *GetDataPointer();
+  uint8_t *GetDataPointer();
 
-   uint8_t &operator[](uint32_t index);
+  uint8_t &operator[](uint32_t index);
 
-   void Save(std::string filename);
+  void Save(std::string filename);
 
-protected:
+ protected:
+  BinaryInFile &self;
 
-   BinaryInFile &self;
+  void Open();
 
-   void Open();
-
-   std::string mFileName;
-   uint8_t *mData;
-   size_t mSize;
+  std::string mFileName;
+  uint8_t *mData;
+  size_t mSize;
 };
 
 class BinaryOutFile {
-public:
-   BinaryOutFile(std::string filename);
+ public:
+  BinaryOutFile(std::string filename);
 
-   virtual ~BinaryOutFile();
+  virtual ~BinaryOutFile();
 
-   bool Write(uint8_t *data, size_t size);
-   void Close();
+  bool Write(uint8_t *data, size_t size);
+  void Close();
 
-protected:
+ protected:
+  std::string mFileName;
+  uint8_t *mData;
+  size_t mSize;
+  uint32_t mBufferSize;
+  uint32_t mPosition;
 
-   std::string mFileName;
-   uint8_t *mData;
-   size_t   mSize;
-   uint32_t mBufferSize;
-   uint32_t mPosition;
+  std::ofstream mOS;
 
-   std::ofstream mOS;
-
-   void FlushBuffer();
+  void FlushBuffer();
 };
 
 #endif /* BINARYFILE_HPP_ */
